@@ -1,0 +1,508 @@
+    <!DOCTYPE html>
+    <html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>幸存者</title>
+        <style>
+            canvas {
+                border: 1px solid #000;
+                background-color: #000;
+            }
+
+            body {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+            }
+
+            #modal {
+                display: none;
+                position: fixed;
+                z-index: 1;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                overflow: auto;
+                background-color: rgba(0, 0, 0, 0.4);
+            }
+
+            #modal-content {
+                background-color: #fefefe;
+                margin: 15% auto;
+                padding: 20px;
+                border: 1px solid #888;
+                width: 80%;
+                text-align: center;
+            }
+        </style>
+    </head>
+
+    <body>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <div id="modal">
+            <div id="modal-content">
+                <h2>你太菜了</h2>
+                <button onclick="location.reload()">再来一局</button>
+            </div>
+        </div>
+
+        <script>
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+
+            class GameObject {
+                constructor(x, y, size) {
+                    this.x = x;
+                    this.y = y;
+                    this.size = size;
+                }
+
+                draw() {
+                    ctx.fillRect(this.x, this.y, this.size, this.size);
+                }
+            }
+
+            class Player extends GameObject {
+                constructor(x, y, size, speed) {
+                    super(x, y, size);
+                    this.speed = speed;
+                    this.color = 'blue';
+                    this.keys = {};
+                    this.hasShootingAbility = false;
+                    this.treasureBoxCount = 0;
+                    this.hitCount = 0;
+                }
+
+                update() {
+                    if (this.keys['w'] && this.y > 0) this.y -= this.speed;
+                    if (this.keys['s'] && this.y < canvas.height - this.size) this.y += this.speed;
+                    if (this.keys['a'] && this.x > 0) this.x -= this.speed;
+                    if (this.keys['d'] && this.x < canvas.width - this.size) this.x += this.speed;
+                }
+
+                draw() {
+                    ctx.fillStyle = this.color;
+                    super.draw();
+                }
+            }
+
+            class Enemy extends GameObject {
+                constructor(x, y, size, speed) {
+                    super(x, y, size);
+                    this.speed = speed;
+                    this.color = 'red';
+                    this.hitCount = 0;
+                    this.lastShotTime = 0;
+                    this.shootInterval = Math.random() * 2 + 2;
+                }
+
+                moveToward(player) {
+                    const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                    this.x += Math.cos(angle) * this.speed;
+                    this.y += Math.sin(angle) * this.speed;
+                }
+
+                shoot(player) {
+                    const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                    const bulletSpeed = 5;
+                    const bulletX = this.x + Math.cos(angle) * this.size;
+                    const bulletY = this.y + Math.sin(angle) * this.size;
+                    return new EnemyBullet(bulletX, bulletY, Math.cos(angle) * bulletSpeed, Math.sin(angle) * bulletSpeed, 20);
+                }
+
+                update(player, currentTime) {
+                    this.moveToward(player);
+                    if (currentTime - this.lastShotTime > this.shootInterval * 1000) {
+                        const bullet = this.shoot(player);
+                        enemyBullets.push(bullet);
+                        this.lastShotTime = currentTime;
+                    }
+                }
+
+                draw() {
+                    ctx.fillStyle = this.color;
+                    super.draw();
+                }
+            }
+
+            class FastEnemy extends Enemy {
+                constructor(x, y, size, speed) {
+                    super(x, y, size, speed * 1.5);
+                    this.color = 'green';
+                }
+            }
+
+            class ShooterEnemy extends Enemy {
+                constructor(x, y, size, speed) {
+                    super(x, y, size, speed);
+                    this.color = 'orange';
+                    this.shootInterval = 1; // Shoots more frequently
+                }
+            }
+
+            class TreasureBox extends GameObject {
+                constructor(x, y, size) {
+                    super(x, y, size);
+                    this.color = 'gold';
+                }
+
+                draw() {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.size / 2, this.y + this.size / 2, this.size / 2, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+
+            class PlayerBullet {
+                constructor(x, y, speedX, speedY, size) {
+                    this.x = x;
+                    this.y = y;
+                    this.speedX = speedX;
+                    this.speedY = speedY;
+                    this.size = size;
+                    this.piercing = false;
+                }
+
+                update() {
+                    this.x += this.speedX;
+                    this.y += this.speedY;
+                }
+
+                draw() {
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+
+            class EnemyBullet {
+                constructor(x, y, speedX, speedY, size, color = 'red') {
+                    this.x = x;
+                    this.y = y;
+                    this.speedX = speedX;
+                    this.speedY = speedY;
+                    this.size = size;
+                    this.color = color;
+                }
+
+                update() {
+                    this.x += this.speedX;
+                    this.y += this.speedY;
+                }
+
+                draw() {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+
+            class PowerfulEnemy extends GameObject {
+                constructor(x, y, size, speed) {
+                    super(x, y, size);
+                    this.speed = speed;
+                    this.color = 'purple';
+                    this.hitCount = 0;
+                    this.lastShotTime = 0;
+                    this.shootInterval = 3;
+                    this.bulletCount = 1;
+                    this.maxHits = 50; 
+                }
+
+                moveToward(player) {
+                    const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                    this.x += Math.cos(angle) * this.speed;
+                    this.y += Math.sin(angle) * this.speed;
+                }
+
+                shoot(player) {
+                    const bullets = [];
+                    for (let i = 0; i < this.bulletCount; i++) {
+                        const angle = Math.atan2(player.y - this.y, player.x - this.x) + (i * Math.PI / 10);
+                        const bulletSpeed = 5;
+                        const bulletX = this.x + Math.cos(angle) * this.size;
+                        const bulletY = this.y + Math.sin(angle) * this.size;
+                        bullets.push(new EnemyBullet(bulletX, bulletY, Math.cos(angle) * bulletSpeed, Math.sin(angle) * bulletSpeed, 5, 'purple'));
+                    }
+                    this.bulletCount++;
+                    return bullets;
+                }
+
+                update(player, currentTime) {
+                    this.moveToward(player);
+                    if (currentTime - this.lastShotTime > this.shootInterval * 1000) {
+                        const newBullets = this.shoot(player);
+                        newBullets.forEach(bullet => enemyBullets.push(bullet));
+                        this.lastShotTime = currentTime;
+                    }
+                }
+
+                draw() {
+                    ctx.fillStyle = this.color;
+                    super.draw();
+                }
+            }
+
+            const player = new Player(400, 300, 20, 3);
+            let enemies = [
+                new Enemy(100, 100, 20, 1),
+                new FastEnemy(700, 500, 20, 1),
+                new ShooterEnemy(300, 400, 20, 1)
+            ];
+            let treasureBoxes = [];
+            let lastTreasureBoxTime = 0;
+            let playerBullets = [];
+            let enemyBullets = [];
+            let lastEnemySpawnTime = 0;
+            let enemyKillCount = 0;
+            let level = 1;
+            let enemySpawnInterval = 3000;
+            let spawnIntervalAdjustment = 0.9;
+            let dangerVisible = false;
+
+            document.addEventListener('keydown', (event) => {
+                player.keys[event.key] = true;
+            });
+
+            document.addEventListener('keyup', (event) => {
+                player.keys[event.key] = false;
+            });
+
+            document.addEventListener('mousemove', (event) => {
+                player.mouseX = event.clientX - canvas.getBoundingClientRect().left;
+                player.mouseY = event.clientY - canvas.getBoundingClientRect().top;
+            });
+
+            document.addEventListener('mousedown', (event) => {
+                if (event.button === 0 && player.hasShootingAbility) {
+                    const angle = Math.atan2(player.mouseY - player.y, player.mouseX - player.x);
+                    const bulletSpeed = 5;
+                    const bulletSize = 5 + player.treasureBoxCount;
+                    const bulletX = player.x + Math.cos(angle) * player.size;
+                    const bulletY = player.y + Math.sin(angle) * player.size;
+                    const bullet = new PlayerBullet(bulletX, bulletY, Math.cos(angle) * bulletSpeed, Math.sin(angle) * bulletSpeed, bulletSize);
+                    if (level > 10) {
+                        bullet.piercing = true;
+                    }
+                    playerBullets.push(bullet);
+                }
+            });
+
+            function drawBackground() {
+                const maxDistance = 2000;
+                const rightRatio = Math.min((player.x) / maxDistance, 1);
+                const leftRatio = Math.min((canvas.width - player.x) / maxDistance, 1);
+                const red = Math.floor(leftRatio * 255);
+                const green = 0;
+                const blue = Math.floor(rightRatio * 255);
+                ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            function generateTreasureBox() {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = 20;
+                treasureBoxes.push(new TreasureBox(x, y, size));
+            }
+
+            function checkPlayerCollisionWithTreasureBox() {
+                for (let box of treasureBoxes) {
+                    if (Math.abs(player.x - box.x) < player.size / 2 + box.size / 2 &&
+                        Math.abs(player.y - box.y) < player.size / 2 + box.size / 2) {
+                        player.hasShootingAbility = true;
+                        player.treasureBoxCount++;
+                        treasureBoxes.splice(treasureBoxes.indexOf(box), 1);
+                        break;
+                    }
+                }
+            }
+
+            function checkPlayerCollisionWithEnemyBullet() {
+                for (let bullet of enemyBullets) {
+                    if (Math.abs(bullet.x - player.x) < bullet.size + player.size &&
+                        Math.abs(bullet.y - player.y) < bullet.size + player.size) {
+                        player.hitCount++;
+                        enemyBullets.splice(enemyBullets.indexOf(bullet), 1);
+                        if (player.hitCount === 5) {
+                            document.getElementById('modal').style.display = 'block';
+                        }
+                        break;
+                    }
+                }
+            }
+
+            function checkPlayerBulletCollisionWithEnemy() {
+                for (let bullet of playerBullets) {
+                    for (let enemy of enemies) {
+                        if (Math.abs(bullet.x - enemy.x) < bullet.size + enemy.size &&
+                            Math.abs(bullet.y - enemy.y) < bullet.size + enemy.size) {
+                            if (enemy instanceof PowerfulEnemy) {
+                                enemy.hitCount++;
+                                if (enemy.hitCount >= enemy.maxHits) {
+                                    enemies.splice(enemies.indexOf(enemy), 1);
+                                    enemyKillCount++;
+                                }
+                            } else {
+                                enemy.hitCount++;
+                                if (enemy.hitCount >= 3) {
+                                    enemies.splice(enemies.indexOf(enemy), 1);
+                                    enemyKillCount++;
+                                }
+                            }
+                            if (!bullet.piercing) {
+                                playerBullets.splice(playerBullets.indexOf(bullet), 1);
+                            }
+                            if (enemyKillCount >= 3) {
+                                level++;
+                                enemyKillCount = 0;
+                                player.hitCount = 0;
+                                if (level % 10 === 0) {
+                                    triggerBossFight();
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            function checkBulletCollision() {
+                if (level <= 10) {
+                    for (let playerBullet of playerBullets) {
+                        for (let enemyBullet of enemyBullets) {
+                            if (Math.abs(playerBullet.x - enemyBullet.x) < playerBullet.size + enemyBullet.size &&
+                                Math.abs(playerBullet.y - enemyBullet.y) < playerBullet.size + enemyBullet.size) {
+                                playerBullets.splice(playerBullets.indexOf(playerBullet), 1);
+                                enemyBullets.splice(enemyBullets.indexOf(enemyBullet), 1);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            function triggerBossFight() {
+                enemies = [];
+                dangerVisible = true;
+                setTimeout(() => {
+                    dangerVisible = false;
+                    const powerfulEnemy = new PowerfulEnemy(canvas.width / 2, canvas.height / 2, 30, 2);
+                    enemies.push(powerfulEnemy);
+                }, 3000);
+            }
+
+            function spawnEnemy() {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = 20;
+                const speed = 1;
+                const enemyTypes = [Enemy, FastEnemy, ShooterEnemy];
+                const enemyType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+                enemies.push(new enemyType(x, y, size, speed));
+            }
+
+            function updatePlayerBullets() {
+                for (let bullet of playerBullets) {
+                    bullet.update();
+                    if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                        playerBullets.splice(playerBullets.indexOf(bullet), 1);
+                    }
+                }
+            }
+
+            function updateEnemyBullets() {
+                for (let bullet of enemyBullets) {
+                    bullet.update();
+                    if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                        enemyBullets.splice(enemyBullets.indexOf(bullet), 1);
+                    }
+                }
+            }
+
+            function drawLevel() {
+                ctx.fillStyle = 'white';
+                ctx.font = '16px Arial';
+                ctx.fillText(`LV: ${level}`, 10, 20);
+            }
+
+            function drawDanger() {
+                if (dangerVisible && Math.floor(performance.now() / 500) % 2 === 0) {
+                    ctx.fillStyle = 'red';
+                    ctx.font = '30px Arial';
+                    ctx.fillText('Danger!!!', canvas.width / 2 - 80, canvas.height / 2);
+                }
+            }
+
+            function gameLoop() {
+                const currentTime = performance.now();
+                if (currentTime - lastTreasureBoxTime > 5000) {
+                    generateTreasureBox();
+                    lastTreasureBoxTime = currentTime;
+                }
+
+                const spawnInterval = Math.max(enemySpawnInterval / Math.pow(level, spawnIntervalAdjustment), 800);
+
+                if (currentTime - lastEnemySpawnTime > spawnInterval && !dangerVisible) {
+                    spawnEnemy();
+                    lastEnemySpawnTime = currentTime;
+                }
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                drawBackground();
+
+                player.update();
+                checkPlayerCollisionWithTreasureBox();
+                checkPlayerCollisionWithEnemyBullet();
+                checkBulletCollision();
+
+                if (enemies.length > 0) {
+                    enemies.forEach(enemy => {
+                        enemy.update(player, currentTime);
+                    });
+                }
+
+                updatePlayerBullets();
+                updateEnemyBullets();
+
+                checkPlayerBulletCollisionWithEnemy();
+
+                player.draw();
+                if (enemies.length > 0) {
+                    enemies.forEach(enemy => {
+                        enemy.draw();
+                    });
+                }
+
+                treasureBoxes.forEach(box => {
+                    box.draw();
+                });
+
+                playerBullets.forEach(bullet => {
+                    bullet.draw();
+                });
+
+                enemyBullets.forEach(bullet => {
+                    bullet.draw();
+                });
+
+                drawLevel();
+                drawDanger();
+
+                requestAnimationFrame(gameLoop);
+            }
+
+            gameLoop();
+        </script>
+    </body>
+    </html>
